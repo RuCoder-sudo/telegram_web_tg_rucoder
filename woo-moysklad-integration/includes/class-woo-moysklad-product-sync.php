@@ -46,6 +46,49 @@ class Woo_Moysklad_Product_Sync {
     public function __construct($api, $logger) {
         $this->api = $api;
         $this->logger = $logger;
+        
+        // Ensure tables are created immediately
+        if (method_exists($this, 'create_tables')) {
+            $this->create_tables();
+        } else {
+            $this->logger->warning("Method 'create_tables' not found");
+            $this->setup_product_mapping_table(); // Fallback
+        }
+    }
+    
+    /**
+     * Setup product mapping table.
+     *
+     * @since    1.0.0
+     */
+    private function setup_product_mapping_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
+        
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
+            $this->logger->info("Setting up product mapping table: $table_name");
+            
+            $charset_collate = $wpdb->get_charset_collate();
+            $sql = "CREATE TABLE $table_name (
+                id bigint(20) NOT NULL AUTO_INCREMENT,
+                woo_product_id bigint(20) NOT NULL,
+                ms_product_id varchar(255) NOT NULL,
+                ms_product_meta longtext NOT NULL,
+                last_updated datetime NOT NULL,
+                PRIMARY KEY  (id),
+                KEY woo_product_id (woo_product_id),
+                KEY ms_product_id (ms_product_id)
+            ) $charset_collate;";
+            
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+            
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
+                $this->logger->info("Product mapping table created successfully");
+            } else {
+                $this->logger->error("Failed to create product mapping table");
+            }
+        }
     }
     
     /**
@@ -241,7 +284,10 @@ class Woo_Moysklad_Product_Sync {
                 
                 // Process each product
                 $product_count = 0;
-                foreach ($products as $product) {
+                $total_products = count($products);
+                $this->logger->info("Начинаем обработку $total_products товаров в текущем пакете");
+                
+                foreach ($products as $index => $product) {
                     // Прерываем синхронизацию, если пользователь запросил остановку
                     if (get_option('woo_moysklad_sync_stopped_by_user', '0') === '1') {
                         $this->logger->info('Синхронизация товаров остановлена пользователем');
@@ -253,12 +299,15 @@ class Woo_Moysklad_Product_Sync {
                     
                     // Добавляем небольшую задержку между обработкой товаров
                     if ($product_count > 1) {
-                        usleep(100000); // 100ms задержка между каждым товаром
+                        usleep(200000); // 200ms задержка между каждым товаром
                     }
                     
                     try {
-                        $this->logger->debug("Обработка товара #{$product_count} из пакета: {$product['name']}");
+                        $this->logger->info("Обработка товара #{$product_count} из {$total_products} в текущем пакете: {$product['name']} (#{$index})");
+                        
+                        // Обрабатываем товар и проверяем результат
                         $result = $this->process_product($product);
+                        $this->logger->info("Результат обработки товара {$product['name']}: $result");
                         
                         if ($result === 'created') {
                             $stats['created']++;
@@ -273,10 +322,43 @@ class Woo_Moysklad_Product_Sync {
                             $stats['failed']++;
                             $this->logger->warning("Ошибка при обработке товара: {$product['name']}");
                         }
+                        
+                        // Сохраняем прогресс после каждого товара
+                        update_option('woo_moysklad_sync_progress', json_encode(array(
+                            'processed' => $offset + $product_count,
+                            'total' => $total_count,
+                            'current_product' => $product['name'],
+                            'stats' => $stats
+                        )));
+                        
+                        $this->logger->info("Завершена обработка товара #{$product_count}: {$product['name']}");
+                        
                     } catch (Exception $e) {
                         // Ловим исключения при обработке отдельных товаров, чтобы не останавливать весь процесс
-                        $this->logger->error("Исключение при обработке товара {$product['name']}: " . $e->getMessage());
+                        $error_details = [
+                            'product_name' => isset($product['name']) ? $product['name'] : 'Unknown',
+                            'product_id' => isset($product['id']) ? $product['id'] : 'Unknown',
+                            'error_message' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString(),
+                            'product_index' => $index,
+                            'product_count' => $product_count,
+                            'total_products' => $total_products
+                        ];
+                        
+                        $this->logger->error("Критическая ошибка при обработке товара {$product['name']}: " . $e->getMessage(), $error_details);
                         $stats['failed']++;
+                        
+                        // Запись детальной информации для диагностики
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('WooMoySklad - Ошибка обработки товара: ' . $e->getMessage());
+                        }
+                    }
+                    
+                    // Дополнительная проверка для отладки
+                    // Добавляем еще больше мер для предотвращения застревания
+                    if ($product_count % 5 === 0) {
+                        $this->logger->info("Обработано $product_count из $total_products товаров в текущем пакете");
+                        sleep(1); // Делаем паузу после каждых 5 товаров
                     }
                 }
                 
@@ -461,25 +543,39 @@ class Woo_Moysklad_Product_Sync {
                 }
             }
             
-            // Check if product already exists by ID
+            // Проверка существования таблицы маппинга
             $mapping_table = $wpdb->prefix . 'woo_moysklad_product_mapping';
-            $woo_product_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT woo_product_id FROM $mapping_table WHERE ms_product_id = %s",
-                $product['id']
-            ));
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$mapping_table'") === $mapping_table;
             
+            if (!$table_exists) {
+                $this->logger->warning("Таблица маппинга $mapping_table не существует. Товары будут созданы заново");
+                $woo_product_id = null;
+            } else {
+                // Check if product already exists by ID
+                $woo_product_id = $wpdb->get_var($wpdb->prepare(
+                    "SELECT woo_product_id FROM $mapping_table WHERE ms_product_id = %s",
+                    $product['id']
+                ));
+                $this->logger->debug("Поиск товара по МойСклад ID: {$product['id']}, найдено: " . ($woo_product_id ? $woo_product_id : 'не найден'));
+            }
+            
+            // Подготовка данных товара
+            $this->logger->debug("Запуск подготовки данных товара: {$product['name']}");
             $product_data = $this->prepare_product_data($product);
             $this->logger->debug("Подготовлены данные товара: {$product['name']}");
             
             // Если товар не найден по ID, попробуем найти его по SKU
             if (!$woo_product_id && !empty($product['code'])) {
+                $this->logger->debug("Поиск товара по SKU: {$product['code']}");
                 $product_id_by_sku = wc_get_product_id_by_sku($product['code']);
                 
                 if ($product_id_by_sku) {
                     $this->logger->info("Продукт не найден по ID {$product['id']}, но найден по SKU: {$product['code']}, ID: {$product_id_by_sku}");
                     
                     // Сохраняем соответствие для последующих синхронизаций
-                    $this->save_product_mapping($product_id_by_sku, $product['id'], json_encode($product));
+                    $this->logger->debug("Сохранение маппинга для товара найденного по SKU");
+                    $mapping_result = $this->save_product_mapping($product_id_by_sku, $product['id'], json_encode($product));
+                    $this->logger->debug("Результат сохранения маппинга: " . ($mapping_result ? 'успешно' : 'ошибка'));
                     
                     $woo_product_id = $product_id_by_sku;
                 }
@@ -490,15 +586,32 @@ class Woo_Moysklad_Product_Sync {
                 // Update existing product
                 $this->logger->info("Обновление существующего товара: {$product['name']}, WooCommerce ID: {$woo_product_id}");
                 $result = $this->update_woo_product($woo_product_id, $product_data, $product);
+                $this->logger->debug("Результат обновления товара: " . ($result ? 'успешно' : 'ошибка'));
+                $this->logger->info("Завершена обработка товара: {$product['name']}, результат: " . ($result ? 'updated' : 'failed'));
                 return $result ? 'updated' : 'failed';
             } else {
                 // Create new product
                 $this->logger->info("Создание нового товара: {$product['name']}");
                 $result = $this->create_woo_product($product_data, $product);
+                $this->logger->debug("Результат создания товара: " . ($result ? 'успешно, ID: ' . $result : 'ошибка'));
+                $this->logger->info("Завершена обработка товара: {$product['name']}, результат: " . ($result ? 'created' : 'failed'));
                 return $result ? 'created' : 'failed';
             }
         } catch (Exception $e) {
-            $this->logger->error("Ошибка при обработке товара {$product['name']}: " . $e->getMessage());
+            $error_details = array(
+                'product_name' => isset($product['name']) ? $product['name'] : 'Unknown',
+                'product_id' => isset($product['id']) ? $product['id'] : 'Unknown',
+                'error_message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            );
+            
+            $this->logger->error("Критическая ошибка при обработке товара {$product['name']}: " . $e->getMessage(), $error_details);
+            
+            // Запись детальной информации для диагностики
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('WooMoySklad - Ошибка обработки товара: ' . $e->getMessage() . ' - ' . json_encode($error_details));
+            }
+            
             return 'failed';
         }
     }
@@ -653,46 +766,63 @@ class Woo_Moysklad_Product_Sync {
                 }
                 
                 $product->set_attributes($attributes);
+                $this->logger->debug("Установлены атрибуты товара: " . count($attributes));
             }
             
             // Save product
+            $this->logger->info("Попытка сохранения товара: " . $product_data['name']);
             $product_id = $product->save();
+            $this->logger->info("Результат сохранения товара: " . ($product_id ? $product_id : 'Ошибка'));
             
             if (!$product_id) {
                 throw new Exception('Failed to save product: ' . $product_data['name']);
             }
             
             // Save mapping
-            $this->save_product_mapping($product_id, $ms_product['id'], json_encode($ms_product));
+            $this->logger->info("Сохранение маппинга товара: " . $product_id . " - " . $ms_product['id']);
+            $mapping_result = $this->save_product_mapping($product_id, $ms_product['id'], json_encode($ms_product));
+            $this->logger->info("Результат сохранения маппинга: " . ($mapping_result ? 'Успешно' : 'Ошибка'));
             
-            // Process images if enabled
-            $sync_product_images = get_option('woo_moysklad_sync_product_images', '1');
+            // Process images - отключаем временно для отладки, так как это может вызывать проблемы
+            $sync_product_images = '0'; // Временно отключаем
             if ($sync_product_images === '1' && isset($ms_product['images']) && isset($ms_product['images']['meta'])) {
+                $this->logger->info("Начало синхронизации изображений для товара: " . $product_id);
                 $this->sync_product_images($product_id, $ms_product);
+                $this->logger->info("Синхронизация изображений завершена для товара: " . $product_id);
             }
             
-            // Check for variants
-            $sync_product_modifications = get_option('woo_moysklad_sync_product_modifications', '1');
+            // Check for variants - отключаем временно для отладки
+            $sync_product_modifications = '0'; // Временно отключаем
             if ($sync_product_modifications === '1') {
+                $this->logger->info("Проверка вариантов товара: " . $ms_product['id']);
                 $variants_response = $this->api->get_product_variants($ms_product['id']);
                 
                 if (!is_wp_error($variants_response) && !empty($variants_response['rows'])) {
                     // Product has variants - convert to variable product
+                    $this->logger->info("Найдены варианты товара, конвертируем в вариативный товар");
                     $this->convert_to_variable_product($product_id, $ms_product, $variants_response['rows']);
                 }
             }
             
-            $this->logger->info('Created WooCommerce product: ' . $product_data['name'], array('product_id' => $product_id));
+            $this->logger->info('Успешно создан товар WooCommerce: ' . $product_data['name'], array('product_id' => $product_id));
             
             return $product_id;
         } catch (Exception $e) {
             $error_details = array(
                 'product_data' => $product_data,
                 'product_name' => isset($product_data['name']) ? $product_data['name'] : 'Unknown',
-                'ms_product_id' => isset($ms_product['id']) ? $ms_product['id'] : 'Unknown'
+                'ms_product_id' => isset($ms_product['id']) ? $ms_product['id'] : 'Unknown',
+                'error_message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             );
             
             $this->logger->error('Не удалось создать товар: ' . $e->getMessage(), $error_details);
+            
+            // Запись детальной информации для диагностики
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('WooMoySklad - Ошибка создания товара: ' . $e->getMessage() . ' - ' . json_encode($error_details));
+            }
+            
             return false;
         }
     }
@@ -1509,61 +1639,121 @@ class Woo_Moysklad_Product_Sync {
     private function save_product_mapping($woo_product_id, $ms_product_id, $ms_product_meta) {
         global $wpdb;
         
-        $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
-        
-        // Проверка, существует ли уже маппинг по ID WooCommerce
-        $existing_by_woo_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $table_name WHERE woo_product_id = %d",
-            $woo_product_id
-        ));
-        
-        // Проверка, существует ли уже маппинг по ID МойСклад
-        $existing_by_ms_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $table_name WHERE ms_product_id = %s",
-            $ms_product_id
-        ));
-        
-        // Если существует маппинг по WooCommerce ID - обновляем его
-        if ($existing_by_woo_id) {
-            $this->logger->debug("Обновление существующего маппинга для WooCommerce ID: $woo_product_id");
+        try {
+            $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
             
-            $wpdb->update(
-                $table_name,
-                array(
-                    'ms_product_id' => $ms_product_id,
-                    'ms_product_meta' => $ms_product_meta,
-                    'last_updated' => current_time('mysql')
-                ),
-                array('woo_product_id' => $woo_product_id)
-            );
-        } 
-        // Если существует маппинг по МойСклад ID - обновляем его на новый WooCommerce ID
-        else if ($existing_by_ms_id) {
-            $this->logger->debug("Обновление существующего маппинга для МойСклад ID: $ms_product_id");
+            // Проверка существования таблицы
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
             
-            $wpdb->update(
-                $table_name,
-                array(
-                    'woo_product_id' => $woo_product_id,
-                    'ms_product_meta' => $ms_product_meta,
-                    'last_updated' => current_time('mysql')
-                ),
-                array('ms_product_id' => $ms_product_id)
-            );
-        } 
-        // Если не существует никакого маппинга - создаем новый
-        else {
-            $this->logger->debug("Создание нового маппинга для товара: WooCommerce ID: $woo_product_id, МойСклад ID: $ms_product_id");
+            if (!$table_exists) {
+                $this->logger->warning("Таблица маппинга $table_name не существует. Создание...");
+                
+                // Создание таблицы маппинга
+                $charset_collate = $wpdb->get_charset_collate();
+                
+                $sql = "CREATE TABLE $table_name (
+                    id bigint(20) NOT NULL AUTO_INCREMENT,
+                    woo_product_id bigint(20) NOT NULL,
+                    ms_product_id varchar(255) NOT NULL,
+                    ms_product_meta longtext NOT NULL,
+                    last_updated datetime NOT NULL,
+                    PRIMARY KEY  (id),
+                    KEY woo_product_id (woo_product_id),
+                    KEY ms_product_id (ms_product_id)
+                ) $charset_collate;";
+                
+                require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+                dbDelta($sql);
+                
+                // Проверяем, что таблица была создана
+                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+                
+                if (!$table_exists) {
+                    $this->logger->error("Не удалось создать таблицу маппинга $table_name");
+                    return false;
+                }
+                
+                $this->logger->info("Таблица маппинга $table_name успешно создана");
+            }
             
-            $wpdb->insert(
-                $table_name,
-                array(
-                    'woo_product_id' => $woo_product_id,
-                    'ms_product_id' => $ms_product_id,
-                    'ms_product_meta' => $ms_product_meta,
-                    'last_updated' => current_time('mysql')
-                )
-            );
+            // Проверка, существует ли уже маппинг по ID WooCommerce
+            $existing_by_woo_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $table_name WHERE woo_product_id = %d",
+                $woo_product_id
+            ));
+            
+            // Проверка, существует ли уже маппинг по ID МойСклад
+            $existing_by_ms_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $table_name WHERE ms_product_id = %s",
+                $ms_product_id
+            ));
+            
+            // Если существует маппинг по WooCommerce ID - обновляем его
+            if ($existing_by_woo_id) {
+                $this->logger->debug("Обновление существующего маппинга для WooCommerce ID: $woo_product_id");
+                
+                $result = $wpdb->update(
+                    $table_name,
+                    array(
+                        'ms_product_id' => $ms_product_id,
+                        'ms_product_meta' => $ms_product_meta,
+                        'last_updated' => current_time('mysql')
+                    ),
+                    array('woo_product_id' => $woo_product_id)
+                );
+                
+                if ($result === false) {
+                    $this->logger->error("Ошибка обновления маппинга: " . $wpdb->last_error);
+                    return false;
+                }
+                
+                return true;
+            } 
+            // Если существует маппинг по МойСклад ID - обновляем его на новый WooCommerce ID
+            else if ($existing_by_ms_id) {
+                $this->logger->debug("Обновление существующего маппинга для МойСклад ID: $ms_product_id");
+                
+                $result = $wpdb->update(
+                    $table_name,
+                    array(
+                        'woo_product_id' => $woo_product_id,
+                        'ms_product_meta' => $ms_product_meta,
+                        'last_updated' => current_time('mysql')
+                    ),
+                    array('ms_product_id' => $ms_product_id)
+                );
+                
+                if ($result === false) {
+                    $this->logger->error("Ошибка обновления маппинга: " . $wpdb->last_error);
+                    return false;
+                }
+                
+                return true;
+            } 
+            // Если не существует никакого маппинга - создаем новый
+            else {
+                $this->logger->debug("Создание нового маппинга для товара: WooCommerce ID: $woo_product_id, МойСклад ID: $ms_product_id");
+                
+                $result = $wpdb->insert(
+                    $table_name,
+                    array(
+                        'woo_product_id' => $woo_product_id,
+                        'ms_product_id' => $ms_product_id,
+                        'ms_product_meta' => $ms_product_meta,
+                        'last_updated' => current_time('mysql')
+                    )
+                );
+                
+                if ($result === false) {
+                    $this->logger->error("Ошибка создания маппинга: " . $wpdb->last_error);
+                    return false;
+                }
+                
+                return true;
+            }
+        } catch (Exception $e) {
+            $this->logger->error("Ошибка при сохранении маппинга: " . $e->getMessage());
+            return false;
         }
     }
 }

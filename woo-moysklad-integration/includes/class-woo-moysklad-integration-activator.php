@@ -181,13 +181,13 @@ class Woo_Moysklad_Integration_Activator {
         $charset_collate = $wpdb->get_charset_collate();
         
         $sql = "CREATE TABLE $table_name (
-            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            id bigint(20) NOT NULL AUTO_INCREMENT,
             woo_product_id bigint(20) NOT NULL,
             ms_product_id varchar(255) NOT NULL,
-            ms_product_meta text NULL,
-            last_updated datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            ms_product_meta longtext NOT NULL,
+            last_updated datetime NOT NULL,
             PRIMARY KEY  (id),
-            UNIQUE KEY woo_product_id (woo_product_id),
+            KEY woo_product_id (woo_product_id),
             KEY ms_product_id (ms_product_id)
         ) $charset_collate;";
         

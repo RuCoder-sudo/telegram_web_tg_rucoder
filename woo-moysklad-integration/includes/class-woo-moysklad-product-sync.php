@@ -46,49 +46,6 @@ class Woo_Moysklad_Product_Sync {
     public function __construct($api, $logger) {
         $this->api = $api;
         $this->logger = $logger;
-        
-        // Ensure tables are created immediately
-        if (method_exists($this, 'create_tables')) {
-            $this->create_tables();
-        } else {
-            $this->logger->warning("Method 'create_tables' not found");
-            $this->setup_product_mapping_table(); // Fallback
-        }
-    }
-    
-    /**
-     * Setup product mapping table.
-     *
-     * @since    1.0.0
-     */
-    private function setup_product_mapping_table() {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
-        
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
-            $this->logger->info("Setting up product mapping table: $table_name");
-            
-            $charset_collate = $wpdb->get_charset_collate();
-            $sql = "CREATE TABLE $table_name (
-                id bigint(20) NOT NULL AUTO_INCREMENT,
-                woo_product_id bigint(20) NOT NULL,
-                ms_product_id varchar(255) NOT NULL,
-                ms_product_meta longtext NOT NULL,
-                last_updated datetime NOT NULL,
-                PRIMARY KEY  (id),
-                KEY woo_product_id (woo_product_id),
-                KEY ms_product_id (ms_product_id)
-            ) $charset_collate;";
-            
-            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-            dbDelta($sql);
-            
-            if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
-                $this->logger->info("Product mapping table created successfully");
-            } else {
-                $this->logger->error("Failed to create product mapping table");
-            }
-        }
     }
     
     /**
@@ -548,7 +505,34 @@ class Woo_Moysklad_Product_Sync {
             $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$mapping_table'") === $mapping_table;
             
             if (!$table_exists) {
-                $this->logger->warning("Таблица маппинга $mapping_table не существует. Товары будут созданы заново");
+                $this->logger->warning("Таблица маппинга $mapping_table не существует. Попытка создания таблицы.");
+                
+                // Создаем таблицу маппинга
+                $charset_collate = $wpdb->get_charset_collate();
+                
+                $sql = "CREATE TABLE $mapping_table (
+                    id bigint(20) NOT NULL AUTO_INCREMENT,
+                    woo_product_id bigint(20) NOT NULL,
+                    ms_product_id varchar(255) NOT NULL,
+                    ms_product_meta longtext NOT NULL,
+                    last_updated datetime NOT NULL,
+                    PRIMARY KEY  (id),
+                    KEY woo_product_id (woo_product_id),
+                    KEY ms_product_id (ms_product_id)
+                ) $charset_collate;";
+                
+                require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+                dbDelta($sql);
+                
+                // Проверяем, создалась ли таблица
+                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$mapping_table'") === $mapping_table;
+                
+                if ($table_exists) {
+                    $this->logger->info("Таблица маппинга $mapping_table успешно создана");
+                } else {
+                    $this->logger->error("Не удалось создать таблицу маппинга $mapping_table");
+                }
+                
                 $woo_product_id = null;
             } else {
                 // Check if product already exists by ID
@@ -1639,121 +1623,90 @@ class Woo_Moysklad_Product_Sync {
     private function save_product_mapping($woo_product_id, $ms_product_id, $ms_product_meta) {
         global $wpdb;
         
-        try {
-            $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
+        // Добавляем базовое логирование
+        $this->logger->debug("Сохранение маппинга товара. WooCommerce ID: $woo_product_id, МойСклад ID: $ms_product_id");
+        
+        // Название таблицы маппинга
+        $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
+        
+        // Проверяем существование таблицы
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+        
+        if (!$table_exists) {
+            $this->logger->warning("Таблица $table_name не существует, создаём...");
             
-            // Проверка существования таблицы
+            // Создаем таблицу маппинга
+            $charset_collate = $wpdb->get_charset_collate();
+            
+            $sql = "CREATE TABLE $table_name (
+                id bigint(20) NOT NULL AUTO_INCREMENT,
+                woo_product_id bigint(20) NOT NULL,
+                ms_product_id varchar(255) NOT NULL,
+                ms_product_meta longtext NOT NULL,
+                last_updated datetime NOT NULL,
+                PRIMARY KEY  (id),
+                KEY woo_product_id (woo_product_id),
+                KEY ms_product_id (ms_product_id)
+            ) $charset_collate;";
+            
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+            
+            // Проверяем создание таблицы
             $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
             
             if (!$table_exists) {
-                $this->logger->warning("Таблица маппинга $table_name не существует. Создание...");
-                
-                // Создание таблицы маппинга
-                $charset_collate = $wpdb->get_charset_collate();
-                
-                $sql = "CREATE TABLE $table_name (
-                    id bigint(20) NOT NULL AUTO_INCREMENT,
-                    woo_product_id bigint(20) NOT NULL,
-                    ms_product_id varchar(255) NOT NULL,
-                    ms_product_meta longtext NOT NULL,
-                    last_updated datetime NOT NULL,
-                    PRIMARY KEY  (id),
-                    KEY woo_product_id (woo_product_id),
-                    KEY ms_product_id (ms_product_id)
-                ) $charset_collate;";
-                
-                require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-                dbDelta($sql);
-                
-                // Проверяем, что таблица была создана
-                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
-                
-                if (!$table_exists) {
-                    $this->logger->error("Не удалось создать таблицу маппинга $table_name");
-                    return false;
-                }
-                
-                $this->logger->info("Таблица маппинга $table_name успешно создана");
+                $this->logger->error("Не удалось создать таблицу $table_name");
+                return false;
             }
             
-            // Проверка, существует ли уже маппинг по ID WooCommerce
-            $existing_by_woo_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM $table_name WHERE woo_product_id = %d",
-                $woo_product_id
-            ));
+            $this->logger->info("Таблица $table_name успешно создана");
+        }
+        
+        // Проверяем существующие записи
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $table_name WHERE ms_product_id = %s",
+            $ms_product_id
+        ));
+        
+        if ($exists) {
+            // Обновляем существующую запись
+            $result = $wpdb->update(
+                $table_name,
+                array(
+                    'woo_product_id' => $woo_product_id,
+                    'ms_product_meta' => $ms_product_meta,
+                    'last_updated' => current_time('mysql')
+                ),
+                array('ms_product_id' => $ms_product_id)
+            );
             
-            // Проверка, существует ли уже маппинг по ID МойСклад
-            $existing_by_ms_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM $table_name WHERE ms_product_id = %s",
-                $ms_product_id
-            ));
-            
-            // Если существует маппинг по WooCommerce ID - обновляем его
-            if ($existing_by_woo_id) {
-                $this->logger->debug("Обновление существующего маппинга для WooCommerce ID: $woo_product_id");
-                
-                $result = $wpdb->update(
-                    $table_name,
-                    array(
-                        'ms_product_id' => $ms_product_id,
-                        'ms_product_meta' => $ms_product_meta,
-                        'last_updated' => current_time('mysql')
-                    ),
-                    array('woo_product_id' => $woo_product_id)
-                );
-                
-                if ($result === false) {
-                    $this->logger->error("Ошибка обновления маппинга: " . $wpdb->last_error);
-                    return false;
-                }
-                
-                return true;
-            } 
-            // Если существует маппинг по МойСклад ID - обновляем его на новый WooCommerce ID
-            else if ($existing_by_ms_id) {
-                $this->logger->debug("Обновление существующего маппинга для МойСклад ID: $ms_product_id");
-                
-                $result = $wpdb->update(
-                    $table_name,
-                    array(
-                        'woo_product_id' => $woo_product_id,
-                        'ms_product_meta' => $ms_product_meta,
-                        'last_updated' => current_time('mysql')
-                    ),
-                    array('ms_product_id' => $ms_product_id)
-                );
-                
-                if ($result === false) {
-                    $this->logger->error("Ошибка обновления маппинга: " . $wpdb->last_error);
-                    return false;
-                }
-                
-                return true;
-            } 
-            // Если не существует никакого маппинга - создаем новый
-            else {
-                $this->logger->debug("Создание нового маппинга для товара: WooCommerce ID: $woo_product_id, МойСклад ID: $ms_product_id");
-                
-                $result = $wpdb->insert(
-                    $table_name,
-                    array(
-                        'woo_product_id' => $woo_product_id,
-                        'ms_product_id' => $ms_product_id,
-                        'ms_product_meta' => $ms_product_meta,
-                        'last_updated' => current_time('mysql')
-                    )
-                );
-                
-                if ($result === false) {
-                    $this->logger->error("Ошибка создания маппинга: " . $wpdb->last_error);
-                    return false;
-                }
-                
-                return true;
+            if ($result === false) {
+                $this->logger->error("Ошибка обновления маппинга: " . $wpdb->last_error);
+                return false;
             }
-        } catch (Exception $e) {
-            $this->logger->error("Ошибка при сохранении маппинга: " . $e->getMessage());
-            return false;
+            
+            $this->logger->debug("Обновлен маппинг для МойСклад ID: $ms_product_id");
+            return true;
+        } else {
+            // Создаем новую запись
+            $result = $wpdb->insert(
+                $table_name,
+                array(
+                    'woo_product_id' => $woo_product_id,
+                    'ms_product_id' => $ms_product_id,
+                    'ms_product_meta' => $ms_product_meta,
+                    'last_updated' => current_time('mysql')
+                )
+            );
+            
+            if ($result === false) {
+                $this->logger->error("Ошибка создания маппинга: " . $wpdb->last_error);
+                return false;
+            }
+            
+            $this->logger->debug("Создан новый маппинг для МойСклад ID: $ms_product_id");
+            return true;
         }
     }
 }

@@ -164,6 +164,7 @@ class Woo_Moysklad_Product_Sync {
         $limit = 50; // Уменьшаем размер пакета для лучшей обработки API-лимитов
         $offset = 0;
         $total_count = 0;
+        $max_retries = 3; // Максимальное количество повторных попыток при ошибках
         
         do {
             // Добавляем задержку между пакетами запросов для предотвращения превышения лимитов API
@@ -171,31 +172,55 @@ class Woo_Moysklad_Product_Sync {
                 sleep(1); // Задержка 1 секунда между пакетами
             }
             
-            // Get products from MoySklad
-            $response = $this->api->get_products($limit, $offset);
+            // Get products from MoySklad with retries
+            $retry_count = 0;
+            $response = null;
+            $success = false;
             
-            if (is_wp_error($response)) {
-                // Проверяем, связана ли ошибка с превышением лимита запросов
-                if (strpos($response->get_error_message(), '1049') !== false) {
-                    $this->logger->warning('Превышен лимит запросов API, делаем паузу перед повторной попыткой');
-                    sleep(3); // Делаем более длительную паузу
-                    
-                    // Повторяем запрос
-                    $response = $this->api->get_products($limit, $offset);
-                    
-                    // Если снова ошибка, выбрасываем исключение
-                    if (is_wp_error($response)) {
-                        throw new Exception($response->get_error_message());
-                    }
-                } else {
-                    throw new Exception($response->get_error_message());
+            while (!$success && $retry_count < $max_retries) {
+                if ($retry_count > 0) {
+                    $this->logger->warning("Повторная попытка #$retry_count получения товаров");
+                    sleep(2 * $retry_count); // Увеличиваем задержку с каждой попыткой
                 }
+                
+                $response = $this->api->get_products($limit, $offset);
+                
+                if (!is_wp_error($response)) {
+                    $success = true;
+                } else {
+                    $retry_count++;
+                    $error_message = $response->get_error_message();
+                    $this->logger->warning("Ошибка при получении товаров: $error_message. Попытка $retry_count из $max_retries");
+                    
+                    // Если превышен лимит API, делаем более длительную паузу
+                    if (strpos($error_message, '1049') !== false) {
+                        $this->logger->warning('Превышен лимит запросов API, делаем дополнительную паузу');
+                        sleep(5); // Длительная пауза при ошибке лимита
+                    }
+                }
+            }
+            
+            // Если после всех попыток не удалось получить данные, бросаем исключение
+            if (!$success) {
+                throw new Exception("Не удалось получить товары после $max_retries попыток: " . $response->get_error_message());
+            }
+            
+            // Проверяем наличие необходимых данных в ответе
+            if (!isset($response['rows']) || !isset($response['meta']['size'])) {
+                $this->logger->error("Неверный формат ответа от API МойСклад", array('response' => $response));
+                throw new Exception("Неверный формат ответа от API МойСклад");
             }
             
             $products = $response['rows'];
             $total_count = $response['meta']['size'];
             
             $this->logger->info("Обработка пакета товаров: $offset - " . ($offset + count($products)) . " из $total_count");
+            
+            // Проверяем, что получен непустой массив товаров
+            if (empty($products)) {
+                $this->logger->warning("Получен пустой массив товаров, возможно достигнут конец списка или проблема с API");
+                break; // Выходим из цикла, если нет товаров
+            }
             
             // Process each product
             $product_count = 0;
@@ -207,22 +232,29 @@ class Woo_Moysklad_Product_Sync {
                     usleep(200000); // 200ms задержка
                 }
                 
-                $result = $this->process_product($product);
-                
-                if ($result === 'created') {
-                    $stats['created']++;
-                } elseif ($result === 'updated') {
-                    $stats['updated']++;
-                } elseif ($result === 'skipped') {
-                    $stats['skipped']++;
-                } else {
+                try {
+                    $result = $this->process_product($product);
+                    
+                    if ($result === 'created') {
+                        $stats['created']++;
+                    } elseif ($result === 'updated') {
+                        $stats['updated']++;
+                    } elseif ($result === 'skipped') {
+                        $stats['skipped']++;
+                    } else {
+                        $stats['failed']++;
+                    }
+                } catch (Exception $e) {
+                    // Ловим исключения при обработке отдельных товаров, чтобы не останавливать весь процесс
+                    $this->logger->error("Ошибка при обработке товара {$product['name']}: " . $e->getMessage());
                     $stats['failed']++;
                 }
             }
             
+            $this->logger->info("Завершена обработка пакета товаров: $offset - " . ($offset + count($products)) . " из $total_count");
             $offset += $limit;
             
-        } while ($offset < $total_count);
+        } while ($offset < $total_count);}
     }
     
     /**
@@ -280,6 +312,12 @@ class Woo_Moysklad_Product_Sync {
                 return $this->sync_products_standard($stats);
             }
             
+            // Проверяем наличие необходимых данных в ответе
+            if (!isset($response['rows']) || !isset($response['meta']['size'])) {
+                $this->logger->error("Неверный формат ответа от API МойСклад", array('response' => $response));
+                throw new Exception("Неверный формат ответа от API МойСклад");
+            }
+            
             if (empty($response['rows'])) {
                 $this->logger->info('Получен пустой список товаров, завершаем синхронизацию');
                 $continue = false;
@@ -318,15 +356,21 @@ class Woo_Moysklad_Product_Sync {
                     usleep(500000); // 500ms задержка
                 }
                 
-                $result = $this->process_product($product);
-                
-                if ($result === 'created') {
-                    $stats['created']++;
-                } elseif ($result === 'updated') {
-                    $stats['updated']++;
-                } elseif ($result === 'skipped') {
-                    $stats['skipped']++;
-                } else {
+                try {
+                    $result = $this->process_product($product);
+                    
+                    if ($result === 'created') {
+                        $stats['created']++;
+                    } elseif ($result === 'updated') {
+                        $stats['updated']++;
+                    } elseif ($result === 'skipped') {
+                        $stats['skipped']++;
+                    } else {
+                        $stats['failed']++;
+                    }
+                } catch (Exception $e) {
+                    // Ловим исключения при обработке отдельных товаров, чтобы не останавливать весь процесс
+                    $this->logger->error("Ошибка при обработке товара {$product['name']}: " . $e->getMessage());
                     $stats['failed']++;
                 }
             }
@@ -354,47 +398,59 @@ class Woo_Moysklad_Product_Sync {
     public function process_product($product) {
         global $wpdb;
         
-        // Skip service products
-        if (isset($product['attributes']) && is_array($product['attributes'])) {
-            foreach ($product['attributes'] as $attr) {
-                if ($attr['name'] === 'Тип номенклатуры' && $attr['value'] === 'Услуга') {
-                    $this->logger->debug('Skipping service product: ' . $product['name']);
-                    return 'skipped';
+        // Добавляем дополнительное логирование для отладки
+        $this->logger->info("Начало обработки товара: {$product['name']}, ID: {$product['id']}");
+        
+        try {
+            // Skip service products
+            if (isset($product['attributes']) && is_array($product['attributes'])) {
+                foreach ($product['attributes'] as $attr) {
+                    if ($attr['name'] === 'Тип номенклатуры' && $attr['value'] === 'Услуга') {
+                        $this->logger->debug('Skipping service product: ' . $product['name']);
+                        return 'skipped';
+                    }
                 }
             }
-        }
-        
-        // Check if product already exists by ID
-        $mapping_table = $wpdb->prefix . 'woo_moysklad_product_mapping';
-        $woo_product_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT woo_product_id FROM $mapping_table WHERE ms_product_id = %s",
-            $product['id']
-        ));
-        
-        $product_data = $this->prepare_product_data($product);
-        
-        // Если товар не найден по ID, попробуем найти его по SKU
-        if (!$woo_product_id && !empty($product['code'])) {
-            $product_id_by_sku = wc_get_product_id_by_sku($product['code']);
             
-            if ($product_id_by_sku) {
-                $this->logger->info("Продукт не найден по ID {$product['id']}, но найден по SKU: {$product['code']}, ID: {$product_id_by_sku}");
+            // Check if product already exists by ID
+            $mapping_table = $wpdb->prefix . 'woo_moysklad_product_mapping';
+            $woo_product_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT woo_product_id FROM $mapping_table WHERE ms_product_id = %s",
+                $product['id']
+            ));
+            
+            $product_data = $this->prepare_product_data($product);
+            $this->logger->debug("Подготовлены данные товара: {$product['name']}");
+            
+            // Если товар не найден по ID, попробуем найти его по SKU
+            if (!$woo_product_id && !empty($product['code'])) {
+                $product_id_by_sku = wc_get_product_id_by_sku($product['code']);
                 
-                // Сохраняем соответствие для последующих синхронизаций
-                $this->save_product_mapping($product_id_by_sku, $product['id'], json_encode($product));
-                
-                $woo_product_id = $product_id_by_sku;
+                if ($product_id_by_sku) {
+                    $this->logger->info("Продукт не найден по ID {$product['id']}, но найден по SKU: {$product['code']}, ID: {$product_id_by_sku}");
+                    
+                    // Сохраняем соответствие для последующих синхронизаций
+                    $this->save_product_mapping($product_id_by_sku, $product['id'], json_encode($product));
+                    
+                    $woo_product_id = $product_id_by_sku;
+                }
             }
-        }
-        
-        if ($woo_product_id) {
-            // Update existing product
-            $result = $this->update_woo_product($woo_product_id, $product_data, $product);
-            return $result ? 'updated' : 'failed';
-        } else {
-            // Create new product
-            $result = $this->create_woo_product($product_data, $product);
-            return $result ? 'created' : 'failed';
+            
+            $result = '';
+            if ($woo_product_id) {
+                // Update existing product
+                $this->logger->info("Обновление существующего товара: {$product['name']}, WooCommerce ID: {$woo_product_id}");
+                $result = $this->update_woo_product($woo_product_id, $product_data, $product);
+                return $result ? 'updated' : 'failed';
+            } else {
+                // Create new product
+                $this->logger->info("Создание нового товара: {$product['name']}");
+                $result = $this->create_woo_product($product_data, $product);
+                return $result ? 'created' : 'failed';
+            }
+        } catch (Exception $e) {
+            $this->logger->error("Ошибка при обработке товара {$product['name']}: " . $e->getMessage());
+            return 'failed';
         }
     }
     

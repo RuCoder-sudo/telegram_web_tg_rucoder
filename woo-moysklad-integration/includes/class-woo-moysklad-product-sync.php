@@ -248,7 +248,10 @@ class Woo_Moysklad_Product_Sync {
                     // Прерываем синхронизацию, если пользователь запросил остановку
                     if (get_option('woo_moysklad_sync_stopped_by_user', '0') === '1') {
                         $this->logger->info('Синхронизация товаров остановлена пользователем');
+                        // Сбрасываем оба флага
                         update_option('woo_moysklad_sync_stopped_by_user', '0');
+                        update_option('woo_moysklad_sync_in_progress', '0');
+                        $this->logger->info('Синхронизация полностью остановлена');
                         return;
                     }
                     
@@ -362,7 +365,15 @@ class Woo_Moysklad_Product_Sync {
         
         $this->logger->info("Запуск ускоренной синхронизации с МойСклад с размером пакета $batch_size товаров");
         
-        while ($continue && get_option('woo_moysklad_sync_stopped_by_user', '0') !== '1') {
+        while ($continue) {
+            // Проверяем флаг остановки синхронизации перед каждым пакетом
+            if (get_option('woo_moysklad_sync_stopped_by_user', '0') === '1') {
+                $this->logger->info('Синхронизация остановлена пользователем перед обработкой пакета');
+                update_option('woo_moysklad_sync_stopped_by_user', '0');
+                update_option('woo_moysklad_sync_in_progress', '0');
+                $this->logger->info('Синхронизация полностью остановлена');
+                return;
+            }
             $retry_count = 0;
             $success = false;
             $current_retry_delay = $retry_delay;
@@ -424,10 +435,12 @@ class Woo_Moysklad_Product_Sync {
                 // Проверяем флаг остановки синхронизации
                 if (get_option('woo_moysklad_sync_stopped_by_user', '0') === '1') {
                     $this->logger->info('Синхронизация товаров остановлена пользователем после обработки ' . $product_count . ' из ' . count($products) . ' товаров в текущем пакете');
-                    // Сбрасываем флаг остановки
+                    // Сбрасываем оба флага
                     update_option('woo_moysklad_sync_stopped_by_user', '0');
+                    update_option('woo_moysklad_sync_in_progress', '0');
+                    $this->logger->info('Синхронизация полностью остановлена');
                     $continue = false;
-                    break;
+                    return; // Полностью выходим из функции
                 }
                 
                 $product_count++;

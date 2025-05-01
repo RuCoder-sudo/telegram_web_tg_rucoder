@@ -254,7 +254,7 @@ class Woo_Moysklad_Product_Sync {
             $this->logger->info("Завершена обработка пакета товаров: $offset - " . ($offset + count($products)) . " из $total_count");
             $offset += $limit;
             
-        } while ($offset < $total_count);}
+        } while ($offset < $total_count);
     }
     
     /**

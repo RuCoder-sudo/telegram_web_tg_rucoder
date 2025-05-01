@@ -10,6 +10,56 @@
      * Handle order synchronization buttons
      */
     function setupOrderSyncButtons() {
+        // Кнопка "ТОЛЬКО ЗАКАЗЫ"
+        $('#orders-only-sync').on('click', function(e) {
+            e.preventDefault();
+            
+            if (!confirm('Вы уверены, что хотите синхронизировать все заказы с МойСклад?')) {
+                return;
+            }
+            
+            var $button = $(this);
+            var $status = $('#sync-status');
+            var $stopButton = $('#stop-order-sync');
+            var $otherButtons = $('#bulk-sync-orders, #sync-single-order');
+            
+            $button.prop('disabled', true);
+            $otherButtons.prop('disabled', true);
+            $status.html('<div class="notice notice-info inline"><p>Синхронизация заказов с МойСклад...</p></div>');
+            $stopButton.show();
+            
+            // Обновляем флаг статуса синхронизации
+            updateSyncStatus(true);
+            
+            // Выполняем запрос на синхронизацию только заказов
+            $.ajax({
+                url: wooMoySkladAdmin.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'woo_moysklad_sync_orders',
+                    nonce: wooMoySkladAdmin.nonce,
+                    orders_only: true
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $status.html('<div class="notice notice-success inline"><p>' + response.data.message + '</p></div>');
+                    } else {
+                        $status.html('<div class="notice notice-error inline"><p>' + 
+                            (response.data.message || 'Не удалось синхронизировать заказы.') + '</p></div>');
+                    }
+                },
+                error: function() {
+                    $status.html('<div class="notice notice-error inline"><p>Произошла ошибка при синхронизации заказов.</p></div>');
+                },
+                complete: function() {
+                    $button.prop('disabled', false);
+                    $otherButtons.prop('disabled', false);
+                    $stopButton.hide();
+                    updateSyncStatus(false);
+                }
+            });
+        });
+        
         // Original single order sync
         $('#sync-order-button').on('click', function(e) {
             e.preventDefault();

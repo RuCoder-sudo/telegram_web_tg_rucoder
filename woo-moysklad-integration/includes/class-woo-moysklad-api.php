@@ -22,10 +22,10 @@ class Woo_Moysklad_API {
      * API base URL.
      *
      * @since    1.0.0
-     * @access   private
+     * @access   public
      * @var      string    $api_base    The base URL for the MoySklad API.
      */
-    private $api_base = 'https://api.moysklad.ru/api/remap/1.2';
+    public $api_base = 'https://api.moysklad.ru/api/remap/1.2';
     
     /**
      * Logger instance.
@@ -612,7 +612,26 @@ class Woo_Moysklad_API {
      */
     public function create_order($order_data) {
         $endpoint = "/entity/customerorder";
-        return $this->request($endpoint, 'POST', $order_data);
+        $this->logger->info("Отправка заказа в МойСклад", array(
+            'endpoint' => $endpoint,
+            'order_data' => $order_data
+        ));
+        
+        // Добавим проверку обязательных полей
+        if (empty($order_data['agent']) || empty($order_data['positions']) || empty($order_data['positions'][0])) {
+            $this->logger->error("Ошибка в структуре данных заказа", array('order_data' => $order_data));
+            return new WP_Error('invalid_order_data', 'Order data is missing required fields');
+        }
+        
+        $response = $this->request($endpoint, 'POST', $order_data);
+        
+        if (is_wp_error($response)) {
+            $this->logger->error("Ошибка создания заказа в МойСклад: " . $response->get_error_message());
+        } else {
+            $this->logger->info("Заказ успешно создан в МойСклад", array('response' => $response));
+        }
+        
+        return $response;
     }
     
     /**
@@ -626,6 +645,61 @@ class Woo_Moysklad_API {
     public function update_order($order_id, $order_data) {
         $endpoint = "/entity/customerorder/$order_id";
         return $this->request($endpoint, 'PUT', $order_data);
+    }
+    
+    /**
+     * Create a simple product in MoySklad.
+     *
+     * @since    1.0.0
+     * @param    string    $name           The product name.
+     * @param    float     $price          The product price.
+     * @param    string    $sku            The product SKU (optional).
+     * @param    string    $description    The product description (optional).
+     * @return   array|WP_Error           The response from the API or an error object.
+     */
+    public function create_simple_product($name, $price = 0, $sku = '', $description = '') {
+        $this->logger->info("Создание нового товара в МойСклад: $name");
+        
+        $this->logger->info("Создание товара с параметрами: имя='$name', цена=$price, артикул='$sku'");
+        
+        // Для выполнения требований МойСклад мы должны указать тип цены,
+        // но для начала нам нужно узнать, что доступно в системе
+        $this->logger->info("Получение информации о типах цен");
+        $price_types = $this->get_price_types();
+        
+        if (is_wp_error($price_types)) {
+            $this->logger->error("Ошибка при получении типов цен: " . $price_types->get_error_message());
+            return $price_types;
+        }
+        
+        $this->logger->debug("Полученный ответ по типам цен: " . json_encode($price_types));
+        
+        // Используем упрощенный формат для указания типа цены
+        $product_data = array(
+            'name' => $name,
+            'code' => $sku,
+            'description' => $description,
+            'salePrices' => array(
+                array(
+                    'value' => intval($price * 100), // МойСклад использует копейки
+                    'priceType' => array(
+                        'name' => 'Цена продажи'
+                    )
+                )
+            )
+        );
+        
+        $this->logger->debug("Данные для создания товара: " . json_encode($product_data));
+        
+        $response = $this->request('/entity/product', 'POST', $product_data);
+        
+        if (is_wp_error($response)) {
+            $this->logger->error("Ошибка при создании товара в МойСклад: " . $response->get_error_message());
+            return $response;
+        }
+        
+        $this->logger->info("Товар успешно создан в МойСклад");
+        return $response;
     }
     
     /**

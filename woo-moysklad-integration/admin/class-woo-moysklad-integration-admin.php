@@ -680,6 +680,79 @@ class Woo_Moysklad_Integration_Admin {
                     'order_id' => $order_id
                 ));
             }
+        // Проверяем, не запрос ли это на синхронизацию только заказов (ТОЛЬКО ЗАКАЗЫ)
+        } elseif (isset($_POST['orders_only']) && $_POST['orders_only']) {
+            $logger->info('Запуск синхронизации всех заказов с МойСклад');
+            
+            // Получаем список всех заказов, включая те, которые ранее уже были синхронизированы
+            global $wpdb;
+            
+            $query = "
+                SELECT p.ID 
+                FROM {$wpdb->posts} p
+                WHERE p.post_type = 'shop_order'
+                AND p.post_status != 'trash'
+                ORDER BY p.post_date DESC
+                LIMIT 100
+            ";
+            
+            $orders = $wpdb->get_results($query);
+            $total_orders = count($orders);
+            
+            // Получаем экземпляр класса синхронизации заказов
+            $order_sync = $this->plugin->get_order_sync();
+            
+            $logger->info("Найдено {$total_orders} заказов для синхронизации");
+            
+            // Синхронизируем каждый заказ
+            $success_count = 0;
+            $failed_count = 0;
+            $skipped_count = 0;
+            
+            foreach ($orders as $order) {
+                // Проверяем, не остановлена ли синхронизация
+                if (get_option('woo_moysklad_sync_stopped_by_user', '0') === '1') {
+                    $logger->info('Синхронизация заказов остановлена пользователем');
+                    break;
+                }
+                
+                try {
+                    // Проверяем, существует ли заказ
+                    $wc_order = wc_get_order($order->ID);
+                    if (!$wc_order) {
+                        $skipped_count++;
+                        continue;
+                    }
+                    
+                    $result = $order_sync->create_or_update_order($order->ID);
+                    
+                    if ($result) {
+                        $success_count++;
+                    } else {
+                        $failed_count++;
+                    }
+                } catch (Exception $e) {
+                    $logger->error("Ошибка при синхронизации заказа #{$order->ID}: " . $e->getMessage());
+                    $failed_count++;
+                }
+            }
+            
+            // Сбрасываем флаги синхронизации
+            update_option('woo_moysklad_sync_in_progress', '0');
+            update_option('woo_moysklad_sync_stopped_by_user', '0');
+            
+            $logger->info("Синхронизация заказов завершена: успешно - $success_count, с ошибками - $failed_count, пропущено - $skipped_count");
+            
+            wp_send_json_success(array(
+                'message' => sprintf(
+                    __('Синхронизация заказов завершена: успешно - %d, с ошибками - %d, пропущено - %d', 'woo-moysklad-integration'),
+                    $success_count, $failed_count, $skipped_count
+                ),
+                'success_count' => $success_count,
+                'failed_count' => $failed_count,
+                'skipped_count' => $skipped_count
+            ));
+            
         } else {
             // Mass order sync - get all unsynchronized orders
             $logger->info('Запуск массовой синхронизации заказов');

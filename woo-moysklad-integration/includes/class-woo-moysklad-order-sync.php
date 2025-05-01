@@ -259,49 +259,157 @@ class Woo_Moysklad_Order_Sync {
             throw new Exception('Синхронизация остановлена пользователем');
         }
         
+        $this->logger->info("Начало подготовки данных заказа #{$order->get_id()}");
+        
         $order_prefix = get_option('woo_moysklad_order_prefix', 'WC-');
         $organization_id = get_option('woo_moysklad_order_organization_id', '');
         $warehouse_id = get_option('woo_moysklad_order_warehouse_id', '');
         
+        $this->logger->debug("Настройки заказа: префикс='$order_prefix', организация='$organization_id', склад='$warehouse_id'");
+        
         // Prepare customer data
+        $this->logger->info("Подготовка данных клиента для заказа #{$order->get_id()}");
         $customer_data = $this->prepare_customer_data($order);
+        $this->logger->debug("Данные клиента", array('customer_data' => $customer_data));
+        
+        // Находим или создаем клиента в МойСклад
+        $this->logger->info("Поиск или создание клиента в МойСклад");
         $customer = $this->api->find_or_create_customer($customer_data);
         
         if (is_wp_error($customer)) {
-            $this->logger->error('Failed to find/create customer: ' . $customer->get_error_message());
-            throw new Exception('Failed to find/create customer: ' . $customer->get_error_message());
+            $this->logger->error('Ошибка поиска/создания клиента: ' . $customer->get_error_message());
+            throw new Exception('Ошибка поиска/создания клиента: ' . $customer->get_error_message());
         }
         
+        $this->logger->info("Клиент успешно найден/создан в МойСклад", array('customer_id' => isset($customer['id']) ? $customer['id'] : 'unknown'));
+        
         // Prepare order items
+        $this->logger->info("Подготовка позиций заказа #{$order->get_id()}");
         $positions = array();
         $items = $order->get_items();
+        
+        if (empty($items)) {
+            $this->logger->warning("Заказ #{$order->get_id()} не содержит товаров");
+        }
+        
+        $this->logger->debug("Количество позиций в заказе: " . count($items));
         
         foreach ($items as $item) {
             $product_id = $item->get_product_id();
             $variation_id = $item->get_variation_id();
             $target_id = $variation_id ? $variation_id : $product_id;
+            $product_name = $item->get_name();
+            
+            $this->logger->debug("Обработка товара: $product_name (ID: $target_id)");
             
             // Get MoySklad product ID
             global $wpdb;
             $table_name = $wpdb->prefix . 'woo_moysklad_product_mapping';
+            
+            // Проверка существования таблицы маппинга
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+            
+            if (!$table_exists) {
+                $this->logger->error("Таблица маппинга товаров $table_name не существует");
+                continue;
+            }
             
             $ms_product_id = $wpdb->get_var($wpdb->prepare(
                 "SELECT ms_product_id FROM $table_name WHERE woo_product_id = %d",
                 $target_id
             ));
             
+            $this->logger->debug("Поиск товара $target_id в маппинге: " . ($ms_product_id ? $ms_product_id : 'не найден'));
+            
             if (!$ms_product_id) {
                 // Try parent product if variation not found
                 if ($variation_id) {
+                    $this->logger->debug("Попытка найти родительский товар $product_id для вариации");
                     $ms_product_id = $wpdb->get_var($wpdb->prepare(
                         "SELECT ms_product_id FROM $table_name WHERE woo_product_id = %d",
                         $product_id
                     ));
+                    $this->logger->debug("Результат поиска родительского товара: " . ($ms_product_id ? $ms_product_id : 'не найден'));
                 }
                 
                 if (!$ms_product_id) {
-                    $this->logger->warning("Product not found in MoySklad: $target_id");
-                    continue;
+                    $this->logger->warning("Товар не найден в МойСклад: $product_name (ID: $target_id). Пробуем создать автоматически.");
+                    
+                    // Автоматически создаем товар в МойСклад
+                    try {
+                        $product = $item->get_product();
+                        $price = 0;
+                        
+                        try {
+                            $price = wc_get_price_excluding_tax($product);
+                        } catch (Exception $e) {
+                            $price = $item->get_total() / $item->get_quantity();
+                        }
+                        
+                        $sku = $product ? $product->get_sku() : '';
+                        $description = $product ? $product->get_description() : '';
+                        
+                        $new_product = $this->api->create_simple_product($product_name, $price, $sku, $description);
+                        
+                        if (is_wp_error($new_product)) {
+                            $this->logger->error("Не удалось создать товар: " . $new_product->get_error_message());
+                            
+                            // Создаем просто товар в МойСклад без ценовых характеристик
+                            try {
+                                $simple_product_data = array(
+                                    'name' => $product_name,
+                                    'code' => $sku
+                                );
+                                
+                                $this->logger->info("Пробуем создать упрощенный товар без цены");
+                                $simple_response = $this->api->request('/entity/product', 'POST', $simple_product_data);
+                                
+                                if (is_wp_error($simple_response)) {
+                                    $this->logger->error("Не удалось создать упрощенный товар: " . $simple_response->get_error_message());
+                                    continue;
+                                }
+                                
+                                $ms_product_id = $simple_response['id'];
+                                $this->logger->info("Упрощенный товар успешно создан в МойСклад с ID: $ms_product_id");
+                                
+                                // Сохраняем соответствие в таблицу маппинга
+                                global $wpdb;
+                                $wpdb->insert(
+                                    $table_name,
+                                    array(
+                                        'ms_product_id' => $ms_product_id,
+                                        'woo_product_id' => $target_id,
+                                        'name' => $product_name
+                                    )
+                                );
+                                
+                                $this->logger->info("Соответствие упрощенного товара добавлено в таблицу маппинга");
+                            } catch (Exception $inner_e) {
+                                $this->logger->error("Ошибка при создании упрощенного товара: " . $inner_e->getMessage());
+                                continue;
+                            }
+                        }
+                        
+                        $ms_product_id = $new_product['id'];
+                        $this->logger->info("Товар успешно создан в МойСклад с ID: $ms_product_id");
+                        
+                        // Сохраняем соответствие в таблицу маппинга
+                        global $wpdb;
+                        $wpdb->insert(
+                            $table_name,
+                            array(
+                                'ms_product_id' => $ms_product_id,
+                                'woo_product_id' => $target_id,
+                                'name' => $product_name
+                            )
+                        );
+                        
+                        $this->logger->info("Соответствие товара добавлено в таблицу маппинга");
+                    } catch (Exception $e) {
+                        $this->logger->error("Ошибка при автоматическом создании товара: " . $e->getMessage());
+                        // Если товар не удалось создать, пропускаем его и продолжаем с другими товарами
+                        continue;
+                    }
                 }
             }
             
@@ -311,16 +419,31 @@ class Woo_Moysklad_Order_Sync {
                 
                 if ($ms_variant_id) {
                     $assortment_url = "/entity/variant/$ms_variant_id";
+                    $this->logger->debug("Используем вариант товара: $ms_variant_id");
                 } else {
                     $assortment_url = "/entity/product/$ms_product_id";
+                    $this->logger->debug("Вариант не найден, используем основной товар: $ms_product_id");
                 }
             } else {
                 $assortment_url = "/entity/product/$ms_product_id";
+                $this->logger->debug("Используем основной товар: $ms_product_id");
             }
             
-            $positions[] = array(
-                'quantity' => $item->get_quantity(),
-                'price' => wc_get_price_excluding_tax($item->get_product()) * 100, // MoySklad uses kopecks
+            $quantity = $item->get_quantity();
+            $price = 0;
+            
+            try {
+                $price = wc_get_price_excluding_tax($item->get_product()) * 100; // MoySklad uses kopecks
+            } catch (Exception $e) {
+                $this->logger->warning("Ошибка получения цены товара: " . $e->getMessage());
+                $price = $item->get_total() / $item->get_quantity() * 100;
+            }
+            
+            $this->logger->debug("Добавление позиции: $product_name, количество: $quantity, цена: $price");
+            
+            $position = array(
+                'quantity' => $quantity,
+                'price' => $price,
                 'discount' => 0,
                 'vat' => 0,
                 'assortment' => array(
@@ -331,18 +454,39 @@ class Woo_Moysklad_Order_Sync {
                     )
                 )
             );
+            
+            $positions[] = $position;
         }
         
-        // Prepare order data
+        $this->logger->info("Подготовлено " . count($positions) . " позиций для заказа #{$order->get_id()}");
+        
+        // Если нет ни одной позиции, не создаем заказ
+        if (empty($positions)) {
+            $this->logger->error("Невозможно создать заказ без позиций для заказа #{$order->get_id()}");
+            throw new Exception('Невозможно создать заказ без позиций');
+        }
+        
+        // Подготовка данных заказа
+        $this->logger->info("Формирование данных заказа для отправки в МойСклад");
+        
+        $order_number = $order->get_order_number();
+        $order_name = $order_prefix . $order_number;
+        $external_code = (string)$order->get_id();
+        $moment = gmdate('Y-m-d H:i:s', strtotime($order->get_date_created()));
+        
+        $description = sprintf(
+            __('WooCommerce Order #%s from %s', 'woo-moysklad-integration'),
+            $order_number,
+            $order->get_date_created()->date_i18n(get_option('date_format') . ' ' . get_option('time_format'))
+        );
+        
+        $this->logger->debug("Основные данные заказа: имя=$order_name, внешний код=$external_code, дата=$moment");
+        
         $order_data = array(
-            'name' => $order_prefix . $order->get_order_number(),
-            'externalCode' => $order->get_id(),
-            'moment' => gmdate('Y-m-d H:i:s', strtotime($order->get_date_created())),
-            'description' => sprintf(
-                __('WooCommerce Order #%s from %s', 'woo-moysklad-integration'),
-                $order->get_order_number(),
-                $order->get_date_created()->date_i18n(get_option('date_format') . ' ' . get_option('time_format'))
-            ),
+            'name' => $order_name,
+            'externalCode' => (string)$external_code,
+            'moment' => $moment,
+            'description' => $description,
             'agent' => array(
                 'meta' => array(
                     'href' => $customer['meta']['href'],
@@ -419,18 +563,50 @@ class Woo_Moysklad_Order_Sync {
             $email = 'customer_' . $order->get_id() . '@example.com';
         }
         
+        // Обрабатываем externalCode как строку для совместимости с МойСклад
+        $external_code = '';
+        if ($order->get_customer_id()) {
+            $external_code = strval($order->get_customer_id());
+        } else {
+            $external_code = 'guest_' . strval($order->get_id());
+        }
+        
+        $this->logger->debug("Значение externalCode для клиента: $external_code");
+        
+        // Подготавливаем адрес в читаемом формате
+        $address_parts = array();
+        
+        if (!empty($order->get_billing_address_1())) {
+            $address_parts[] = $order->get_billing_address_1();
+        }
+        if (!empty($order->get_billing_address_2())) {
+            $address_parts[] = $order->get_billing_address_2();
+        }
+        if (!empty($order->get_billing_city())) {
+            $address_parts[] = $order->get_billing_city();
+        }
+        if (!empty($order->get_billing_state())) {
+            $address_parts[] = $order->get_billing_state();
+        }
+        if (!empty($order->get_billing_postcode())) {
+            $address_parts[] = $order->get_billing_postcode();
+        }
+        if (!empty($order->get_billing_country())) {
+            $address_parts[] = $order->get_billing_country();
+        }
+        
+        $actual_address = implode(', ', $address_parts);
+        
         $customer_data = array(
-            'name' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
-            'externalCode' => $order->get_customer_id() ? $order->get_customer_id() : 'guest_' . $order->get_id(),
+            'name' => trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
+            'externalCode' => (string)$external_code,
             'email' => $email,
             'phone' => $phone,
             'description' => sprintf(
                 __('WooCommerce customer created from order #%s', 'woo-moysklad-integration'),
                 $order->get_order_number()
             ),
-            'actualAddress' => $order->get_billing_address_1() . ' ' . $order->get_billing_address_2() . ', ' . 
-                               $order->get_billing_city() . ', ' . $order->get_billing_state() . ', ' . 
-                               $order->get_billing_postcode() . ', ' . $order->get_billing_country()
+            'actualAddress' => $actual_address
         );
         
         // Add customer group if set

@@ -105,6 +105,9 @@ $recent_orders = $wpdb->get_results("
             <button id="bulk-sync-orders" class="button">
                 <?php _e('Синхронизировать все заказы', 'woo-moysklad-integration'); ?>
             </button>
+            <button id="orders-only-sync" class="button" style="background-color: #0073aa; color: #fff; margin-left: 10px;">
+                <?php _e('ТОЛЬКО ЗАКАЗЫ', 'woo-moysklad-integration'); ?>
+            </button>
             <button id="stop-order-sync" class="button button-danger" style="display: none; background-color: #dc3232; color: #fff;">
                 <?php _e('Остановить синхронизацию', 'woo-moysklad-integration'); ?>
             </button>

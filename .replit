@@ -1,4 +1,4 @@
-modules = ["php", "python-3.11"]
+modules = ["php", "python-3.11", "nodejs-20"]
 
 [nix]
 channel = "stable-24_05"
@@ -26,3 +26,7 @@ waitForPort = 5000
 
 [deployment]
 run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"]
+
+[[ports]]
+localPort = 5000
+externalPort = 80

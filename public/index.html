@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RuCoder - Профессиональная разработка сайтов</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <img src="./img/logo.svg" alt="RuCoder Logo" class="logo-img">
+                <h1>RuCoder</h1>
+            </div>
+        </header>
+
+        <main>
+            <!-- Главная секция -->
+            <section id="home" class="active">
+                <div class="home-content">
+                    <h2>Профессиональная разработка сайтов и веб-приложений<span class="accent">.</span></h2>
+                    <p>Создам эффективные и современные решения для вашего бизнеса с индивидуальным подходом к каждому проекту.</p>
+                    
+                    <div class="button-group">
+                        <button class="nav-button" data-section="services">Услуги</button>
+                        <button class="nav-button primary" data-section="order">Заказать</button>
+                        <button class="nav-button" data-section="contacts">Контакты</button>
+                    </div>
+                </div>
+                
+                <div class="news-section">
+                    <h3>Последние новости<span class="accent">:</span></h3>
+                    <ul class="news-list">
+                        <li><a href="#">Запуск нового онлайн-сервиса для компании X</a></li>
+                        <li><a href="#">5 трендов веб-разработки в 2025 году</a></li>
+                        <li><a href="#">Релиз обновленной CMS для интернет-магазинов</a></li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Секция услуг -->
+            <section id="services">
+                <h2>Мои услуги<span class="accent">:</span></h2>
+                
+                <div class="service-card">
+                    <h3>Backend-разработка</h3>
+                    <p>Создание серверной части сайтов и приложений: API, работа с базами данных, интеграция с внешними сервисами.</p>
+                    <button class="order-button" data-service="Backend-разработка">Заказать</button>
+                </div>
+                
+                <div class="service-card">
+                    <h3>Frontend-вёрстка</h3>
+                    <p>Разработка интерфейсов с адаптивным дизайном, анимациями и интерактивными элементами для максимального удобства пользователей.</p>
+                    <button class="order-button" data-service="Frontend-вёрстка">Заказать</button>
+                </div>
+                
+                <div class="service-card">
+                    <h3>Full Stack (под ключ)</h3>
+                    <p>Комплексная разработка проекта от идеи до запуска: проектирование, дизайн, программирование, тестирование и деплой.</p>
+                    <button class="order-button" data-service="Full Stack">Заказать</button>
+                </div>
+                
+                <div class="service-card">
+                    <h3>Разработка на WordPress</h3>
+                    <p>Создание сайтов, интернет-магазинов и порталов на основе WordPress с уникальным дизайном и нужным функционалом.</p>
+                    <button class="order-button" data-service="WordPress">Заказать</button>
+                </div>
+                
+                <button class="back-button" data-section="home">На главную</button>
+            </section>
+
+            <!-- Секция контактов -->
+            <section id="contacts">
+                <h2>Мои контакты<span class="accent">:</span></h2>
+                
+                <div class="contact-list">
+                    <div class="contact-item">
+                        <span class="contact-icon">📞</span>
+                        <a href="tel:+79859855397">+7 (985) 985-53-97</a>
+                    </div>
+                    
+                    <div class="contact-item">
+                        <span class="contact-icon">✉️</span>
+                        <a href="mailto:support@рукодер.рф">support@рукодер.рф</a>
+                    </div>
+                    
+                    <div class="contact-item">
+                        <span class="contact-icon">✈️</span>
+                        <a href="https://t.me/RussCoder">@RussCoder</a>
+                    </div>
+                </div>
+                
+                <div class="social-links">
+                    <a href="https://t.me/RussCoder" class="social-button telegram">Telegram</a>
+                    <a href="#" class="social-button vk">VK</a>
+                    <a href="#" class="social-button instagram">Instagram</a>
+                </div>
+                
+                <button class="primary-button tg-chat">Написать в Telegram</button>
+                
+                <button class="back-button" data-section="home">На главную</button>
+            </section>
+
+            <!-- Секция заказа -->
+            <section id="order">
+                <h2>Заказать разработку<span class="accent">:</span></h2>
+                
+                <form id="order-form" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="name">Ваше имя:</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="service">Услуга:</label>
+                        <select id="service" name="service" required>
+                            <option value="">Выберите услугу</option>
+                            <option value="Backend-разработка">Backend-разработка</option>
+                            <option value="Frontend-вёрстка">Frontend-вёрстка</option>
+                            <option value="Full Stack">Full Stack (под ключ)</option>
+                            <option value="WordPress">Разработка на WordPress</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description">Описание проекта:</label>
+                        <textarea id="description" name="description" rows="5" required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contact">Контакт для связи:</label>
+                        <input type="text" id="contact" name="contact" placeholder="Telegram/VK/телефон" required>
+                    </div>
+                    
+                    <div class="form-group file-upload">
+                        <label for="file">Прикрепить файл (макет, ТЗ):</label>
+                        <input type="file" id="file" name="file">
+                    </div>
+                    
+                    <button type="submit" class="primary-button">Отправить заявку</button>
+                </form>
+                
+                <button class="back-button" data-section="home">На главную</button>
+            </section>
+        </main>
+    </div>
+    
+    <div id="success-message" class="message-popup">
+        <div class="message-content">
+            <h3>Заявка отправлена!</h3>
+            <p>Спасибо за обращение. Я свяжусь с вами в ближайшее время.</p>
+            <button class="close-message">ОК</button>
+        </div>
+    </div>
+
+    <script src="./js/app.js"></script>
+</body>
+</html>

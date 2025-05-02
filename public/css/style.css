@@ -719,6 +719,13 @@ footer {
     box-shadow: 0 4px 8px rgba(255, 0, 0, 0.3);
 }
 
+.nav-link.active {
+    color: var(--accent-color);
+    background-color: rgba(255, 255, 255, 0.05);
+    transform: translateY(-2px);
+    box-shadow: 0 2px 5px rgba(255, 0, 0, 0.2);
+}
+
 .header-banner {
     display: flex;
     align-items: center;

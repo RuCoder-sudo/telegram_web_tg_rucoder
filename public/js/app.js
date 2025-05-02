@@ -9,10 +9,31 @@ document.addEventListener('DOMContentLoaded', function() {
     document.documentElement.style.setProperty('--text-color', '#ffffff');
     document.documentElement.style.setProperty('--accent-color', '#ff0000');
     
+    // Инициализация Lottie анимации
+    const lottieContainer = document.getElementById('lottie-animation');
+    if (lottieContainer) {
+        const lottieAnim = lottie.loadAnimation({
+            container: lottieContainer,
+            renderer: 'svg',
+            loop: true,
+            autoplay: true,
+            path: './lf30_editor_jqtxdpu7.json'
+        });
+        
+        // Обработка ошибок загрузки анимации
+        lottieAnim.addEventListener('data_failed', function() {
+            console.error('Не удалось загрузить Lottie анимацию');
+            // Резервный вариант - показываем статическое изображение
+            lottieContainer.innerHTML = '<img src="./img/dev-illustration.svg" alt="Development" class="hero-image" style="max-width: 100%; height: auto;">';
+        });
+    }
+    
     // Навигация между разделами
     const sections = document.querySelectorAll('section');
     const navButtons = document.querySelectorAll('[data-section]');
+    const navLinks = document.querySelectorAll('.nav-link');
     const orderButtons = document.querySelectorAll('.order-button');
+    const footerLinks = document.querySelectorAll('.footer-link');
     
     // Функция переключения разделов с анимацией
     function showSection(sectionId) {
@@ -71,9 +92,34 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Назначаем обработчики событий для кнопок навигации
     navButtons.forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
             const sectionId = this.dataset.section;
             showSection(sectionId);
+        });
+    });
+    
+    // Обработчики для навигационных ссылок в шапке
+    navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const sectionId = this.dataset.section;
+            showSection(sectionId);
+            
+            // Добавляем визуальное выделение активной ссылки
+            navLinks.forEach(l => l.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+    
+    // Обработчики для ссылок в футере
+    footerLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const sectionId = this.dataset.section;
+            if (sectionId) {
+                showSection(sectionId);
+            }
         });
     });
     

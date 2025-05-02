@@ -14,17 +14,58 @@ document.addEventListener('DOMContentLoaded', function() {
     const navButtons = document.querySelectorAll('[data-section]');
     const orderButtons = document.querySelectorAll('.order-button');
     
-    // Функция переключения разделов
+    // Функция переключения разделов с анимацией
     function showSection(sectionId) {
-        sections.forEach(section => {
-            section.classList.remove('active');
-        });
-        
+        // Находим текущую активную секцию
+        const activeSection = document.querySelector('section.active');
         const targetSection = document.getElementById(sectionId);
-        if (targetSection) {
+        
+        if (!targetSection) return;
+        
+        // Если есть активная секция - сначала скрываем её с анимацией
+        if (activeSection) {
+            // Добавляем класс для анимации исчезновения
+            activeSection.style.opacity = '0';
+            activeSection.style.transform = 'translateY(-10px)';
+            
+            // После завершения анимации исчезновения
+            setTimeout(() => {
+                activeSection.classList.remove('active');
+                
+                // Показываем новую секцию с анимацией
+                showTargetSection();
+            }, 300); // Время на исчезновение
+        } else {
+            // Если нет активной секции, просто показываем целевую
+            showTargetSection();
+        }
+        
+        function showTargetSection() {
+            // Подготовка новой секции (невидимая)
+            targetSection.style.opacity = '0';
+            targetSection.style.transform = 'translateY(20px)';
             targetSection.classList.add('active');
+            
             // Прокрутка вверх
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            // Анимация появления через небольшую задержку
+            setTimeout(() => {
+                targetSection.style.opacity = '1';
+                targetSection.style.transform = 'translateY(0)';
+                
+                // Анимируем дочерние элементы последовательно
+                const animElements = targetSection.querySelectorAll('.fade-in-up');
+                animElements.forEach((el, index) => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(20px)';
+                    
+                    setTimeout(() => {
+                        el.style.opacity = '1';
+                        el.style.transform = 'translateY(0)';
+                    }, 100 + (index * 80)); // Последовательная анимация элементов
+                });
+            }, 50);
         }
     }
     

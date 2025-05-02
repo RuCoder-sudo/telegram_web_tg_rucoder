@@ -499,6 +499,11 @@ input[type="file"] {
 .step-card h3 {
     margin-bottom: 10px;
     font-size: 18px;
+    text-align: center;
+}
+
+.step-card p {
+    text-align: center;
 }
 
 .benefits-list {

@@ -27,3 +27,6 @@ git clone https://github.com/RuCoder-sudo/telegram_web_tg_rucoder.git
 cd telegram_web_tg_rucoder
 npm install
 npm start
+
+start
+🚀 Протестировать бота(https://web.telegram.org/a/#7558753292) | 💻 Основной сайт(https://xn--80aaggtieo3b1f.xn--p1ai/)

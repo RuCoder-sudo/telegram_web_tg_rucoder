@@ -797,6 +797,10 @@ footer {
     font-size: 24px;
     margin-bottom: 10px;
     color: var(--accent-color);
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    text-align: center;
 }
 
 .animated-icon {

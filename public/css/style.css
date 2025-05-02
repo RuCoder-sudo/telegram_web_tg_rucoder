@@ -107,6 +107,14 @@ p {
     text-align: center;
 }
 
+.button-group, .nav-button, .primary-button, .order-button, .cta-button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 .accent {
     color: var(--accent-color);
 }
@@ -478,7 +486,14 @@ input[type="file"] {
     font-size: 36px;
     font-weight: bold;
     color: var(--accent-color);
-    opacity: 0.3;
+    opacity: 0.5;
+    animation: numberPulse 3s infinite;
+}
+
+@keyframes numberPulse {
+    0% { transform: scale(1); opacity: 0.5; }
+    50% { transform: scale(1.2); opacity: 0.8; }
+    100% { transform: scale(1); opacity: 0.5; }
 }
 
 .step-card h3 {
@@ -790,12 +805,12 @@ footer {
     display: inline-flex;
     justify-content: center;
     align-items: center;
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background-color: var(--secondary-color);
-    color: var(--text-color);
-    font-size: 18px;
+    color: var(--accent-color);
+    font-size: 14px;
     transition: var(--transition);
 }
 

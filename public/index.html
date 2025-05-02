@@ -6,13 +6,36 @@
     <title>RuCoder - Профессиональная разработка сайтов</title>
     <link rel="stylesheet" href="./css/style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.9.6/lottie.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <header>
-            <div class="logo">
-                <img src="./img/logo.svg" alt="RuCoder Logo" class="logo-img">
-                <h1>RuCoder</h1>
+        <header class="main-header">
+            <div class="header-top">
+                <div class="logo">
+                    <img src="./img/logo.svg" alt="RuCoder Logo" class="logo-img">
+                    <h1>RuCoder</h1>
+                </div>
+                <nav class="main-nav">
+                    <ul class="nav-list">
+                        <li><a href="#" class="nav-link" data-section="home"><i class="fas fa-home"></i> Главная</a></li>
+                        <li><a href="#" class="nav-link" data-section="services"><i class="fas fa-cogs"></i> Услуги</a></li>
+                        <li><a href="#" class="nav-link" data-section="contacts"><i class="fas fa-address-book"></i> Контакты</a></li>
+                        <li><a href="#" class="nav-link cta" data-section="order"><i class="fas fa-shopping-cart"></i> Заказать</a></li>
+                    </ul>
+                </nav>
+            </div>
+            
+            <div class="header-banner">
+                <div class="header-text">
+                    <h2 class="header-title animated-text">Ваш сайт - <span class="accent-text">ваше лицо</span> в интернете</h2>
+                    <p class="header-description">Современные решения для вашего бизнеса: от лендингов до сложных веб-приложений. Создаю не просто сайты, а <strong>эффективные инструменты продаж</strong>.</p>
+                    <div class="header-cta">
+                        <button class="nav-button primary glow-button" data-section="order">Получить консультацию</button>
+                    </div>
+                </div>
+                <div id="lottie-animation" class="header-animation"></div>
             </div>
         </header>
 
@@ -42,24 +65,36 @@
                     
                     <div class="step-card fade-in-up" style="animation-delay: 1.1s">
                         <div class="step-number">1</div>
+                        <div class="step-icon">
+                            <i class="fas fa-clipboard-list animated-icon"></i>
+                        </div>
                         <h3>Первичные данные</h3>
                         <p>Собираю от Вас всю первичную информацию. Есть ли ТЗ, есть ли дизайн, если ли фирменный стиль, есть ли прототип, ваши пожелания по бюджету.</p>
                     </div>
                     
                     <div class="step-card fade-in-up" style="animation-delay: 1.2s">
                         <div class="step-number">2</div>
+                        <div class="step-icon">
+                            <i class="fas fa-file-contract animated-icon"></i>
+                        </div>
                         <h3>Формирую ТЗ на разработку</h3>
                         <p>На этом этапе я учитываю все ваши «хотелки». Оформляем их в виде ТЗ. Согласовываем внешний вид, концепцию.</p>
                     </div>
                     
                     <div class="step-card fade-in-up" style="animation-delay: 1.3s">
                         <div class="step-number">3</div>
+                        <div class="step-icon">
+                            <i class="fas fa-code animated-icon"></i>
+                        </div>
                         <h3>Разработка и тестовая эксплуатация</h3>
                         <p>Регистрируем домен, загружаем номенклатуру, интегрируем с другими системами, подключаем онлайн-кассы, пишем свои API интерфейсы.</p>
                     </div>
                     
                     <div class="step-card fade-in-up" style="animation-delay: 1.4s">
                         <div class="step-number">4</div>
+                        <div class="step-icon">
+                            <i class="fas fa-rocket animated-icon"></i>
+                        </div>
                         <h3>Сдача сайта</h3>
                         <p>Завершение работ по проектированию сайта. Устранение замечаний. Помощь в освоении новой системы продаж.</p>
                     </div>
@@ -166,9 +201,10 @@
                 </div>
                 
                 <div class="social-links">
-                    <a href="https://t.me/RussCoder" class="social-button telegram">Telegram</a>
-                    <a href="#" class="social-button vk">VK</a>
-                    <a href="#" class="social-button instagram">Instagram</a>
+                    <a href="https://t.me/RussCoder" class="social-button telegram"><i class="fab fa-telegram"></i> Telegram</a>
+                    <a href="https://vk.com/rucoderweb" class="social-button vk"><i class="fab fa-vk"></i> VK</a>
+                    <a href="https://www.instagram.com/rucoder.web/" class="social-button instagram"><i class="fab fa-instagram"></i> Instagram</a>
+                    <a href="https://github.com/RuCoder-sudo" class="social-button github"><i class="fab fa-github"></i> GitHub</a>
                 </div>
                 
                 <button class="primary-button tg-chat">Написать в Telegram</button>
@@ -226,11 +262,19 @@
         <footer>
             <div class="copyright">Copyright &copy; 2025 &laquo;🆁🆄🅲🅾🅳🅴🆁&raquo; — Солошенко Сергей Геннадьевич ИНН: 772076225347</div>
             <div>Разработка сайтов с ❤️ | Все права защищены.</div>
+            
+            <div class="footer-social">
+                <a href="https://t.me/RussCoder" class="social-icon" target="_blank"><i class="fab fa-telegram"></i></a>
+                <a href="https://vk.com/rucoderweb" class="social-icon" target="_blank"><i class="fab fa-vk"></i></a>
+                <a href="https://www.instagram.com/rucoder.web/" class="social-icon" target="_blank"><i class="fab fa-instagram"></i></a>
+                <a href="https://github.com/RuCoder-sudo" class="social-icon" target="_blank"><i class="fab fa-github"></i></a>
+            </div>
+            
             <div class="footer-links">
-                <a href="#" class="footer-link">Портфолио</a>
-                <a href="#" class="footer-link">Предложения</a>
-                <a href="#" class="footer-link">Документы</a>
-                <a href="#" class="footer-link">Политика конфиденциальности</a>
+                <a href="#" class="footer-link" data-section="home">Главная</a>
+                <a href="#" class="footer-link" data-section="services">Услуги</a>
+                <a href="#" class="footer-link" data-section="contacts">Контакты</a>
+                <a href="#" class="footer-link" data-section="order">Заказать</a>
             </div>
         </footer>
     </div>

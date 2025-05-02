@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderer: 'svg',
             loop: true,
             autoplay: true,
-            path: './lf30_editor_jqtxdpu7.json'
+            path: '../lf30_editor_jqtxdpu7.json'
         });
         
         // Обработка ошибок загрузки анимации

@@ -177,6 +177,51 @@ sudo certbot --apache -d your-domain.com
 
 Если анимации не отображаются, убедитесь, что файл Lottie-анимации доступен по правильному пути и имеет корректные права доступа.
 
+# Проверка Telegram бота
+echo "Проверка Telegram бота:"
+ps -ef | grep "bot.py" | grep -v grep
+if [ $? -eq 0 ]; then
+  echo "✓ Telegram бот запущен и работает"
+else
+  echo "✗ Telegram бот не запущен"
+fi
+# Проверка доступности веб-приложения через curl
+echo -e "\nПроверка веб-приложения Telegram (https://rucoderweb.website/):"
+curl -s -o /dev/null -w "%{http_code}" https://rucoderweb.website/
+if [ $? -eq 0 ]; then
+  echo "✓ Веб-приложение доступно"
+else
+  echo "✗ Веб-приложение недоступно"
+fi
+# Проверка процесса веб-приложения
+echo -e "\nПроверка процесса веб-приложения:"
+ps -ef | grep "main.py" | grep -v grep
+if [ $? -eq 0 ]; then
+  echo "✓ Процесс веб-приложения запущен"
+else
+  echo "✗ Процесс веб-приложения не запущен"
+fi
+# Проверка связи с Nginx
+echo -e "\nПроверка настройки Nginx для доменов:"
+nginx -t
+echo -e "\nНастройка доменов в Nginx:"
+grep "server_name" /etc/nginx/sites-enabled/* | grep -E "marketingmaster.space|rucoderweb.website"
+# Проверка работоспособности MarketingMaster
+echo -e "\nПроверка MarketingMaster (https://marketingmaster.space/):"
+curl -s -o /dev/null -w "%{http_code}" https://marketingmaster.space/
+if [ $? -eq 0 ]; then
+  echo "✓ MarketingMaster доступен"
+else
+  echo "✗ MarketingMaster недоступен"
+fi
+# Проверка логов последней активности бота
+echo -e "\nПоследние логи Telegram бота:"
+tail -n 10 /root/logs/telegrambot/output.log
+# Проверка настройки мониторинга
+echo -e "\nНастройка мониторинга:"
+crontab -l | grep -E "check_services|startup_all"
+echo -e "\nВсе сервисы настроены и работают."
+
 ## Дополнительные ресурсы
 
 - [Документация Telegram Mini Apps](https://core.telegram.org/bots/webapps)

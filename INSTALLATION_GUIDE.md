@@ -222,6 +222,54 @@ echo -e "\nНастройка мониторинга:"
 crontab -l | grep -E "check_services|startup_all"
 echo -e "\nВсе сервисы настроены и работают."
 
+Перезапуск Telegram бота
+# Остановка бота
+pkill -f "python3 bot.py"
+# Запуск бота с записью логов
+cd /root/telegram_web_tg_rucoder
+nohup python3 bot.py > /root/logs/telegrambot/output.log 2>&1 &
+# Проверка, что бот запустился
+ps -ef | grep "bot.py" | grep -v grep
+Выключение бота
+# Остановка бота
+pkill -f "python3 bot.py"
+# Проверка, что бот остановлен (не должно быть вывода)
+ps -ef | grep "bot.py" | grep -v grep
+Включение бота
+# Запуск бота
+cd /root/telegram_web_tg_rucoder
+mkdir -p /root/logs/telegrambot
+nohup python3 bot.py > /root/logs/telegrambot/output.log 2>&1 &
+# Проверка, что бот запустился
+ps -ef | grep "bot.py" | grep -v grep
+Проверка статуса бота
+# Проверка запущен ли бот
+if pgrep -f "python3 bot.py" > /dev/null; then
+  echo "✓ Бот запущен и работает"
+  # Показываем последние 5 строк лога
+  echo -e "\nПоследние записи лога:"
+  tail -n 5 /root/logs/telegrambot/output.log
+else
+  echo "✗ Бот не запущен"
+fi
+Универсальная команда для перезапуска
+# Универсальный скрипт перезапуска бота
+echo "Останавливаю бота..."
+pkill -f "python3 bot.py" || true
+sleep 2
+echo "Запускаю бота..."
+cd /root/telegram_web_tg_rucoder
+mkdir -p /root/logs/telegrambot
+nohup python3 bot.py > /root/logs/telegrambot/output.log 2>&1 &
+sleep 2
+if pgrep -f "python3 bot.py" > /dev/null; then
+  echo "✓ Бот успешно перезапущен"
+else
+  echo "✗ Ошибка при запуске бота. Проверьте логи:"
+  tail -n 10 /root/logs/telegrambot/output.log
+fi
+
+
 ## Дополнительные ресурсы
 
 - [Документация Telegram Mini Apps](https://core.telegram.org/bots/webapps)
